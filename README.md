@@ -27,7 +27,6 @@ A minimal [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server
 
 ```bash
 git clone https://github.com/harisrinevas/hackerNewsMCPlite.git
-cd hn-mcp-server
 ```
 
 **2. Create a virtual environment and install dependencies**
@@ -59,7 +58,7 @@ Add the following to your `claude_desktop_config.json`:
       "command": "uv",
       "args": [
         "--directory",
-        "/absolute/path/to/hn-mcp-server",
+        "/absolute/path/to/src",
         "run",
         "server.py"
       ]
