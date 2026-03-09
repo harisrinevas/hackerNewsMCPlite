@@ -1,6 +1,6 @@
 # 🔶 HackerNews MCP Server
 
-A minimal [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that exposes the public [HackerNews API](https://github.com/HackerNews/API) as tools for AI assistants like Claude.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that exposes the public [HackerNews API](https://github.com/HackerNews/API) as tools for AI assistants like Claude.
 
 ---
 
@@ -8,15 +8,21 @@ A minimal [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server
 
 | Tool | Description |
 |------|-------------|
-| `HN_get_top10_stories` | Fetch the current list of top stories on HackerNews |
+| `HN_latest_item` | Get the most recently submitted item ID on HackerNews |
+| `HN_get_top_stories` | Fetch top story IDs (configurable limit, default 10) |
+| `HN_get_new_stories` | Fetch newest story IDs (configurable limit, default 10) |
+| `HN_get_best_stories` | Fetch best story IDs (configurable limit, default 10) |
+| `HN_get_ask_stories` | Fetch Ask HN story IDs (configurable limit, default 10) |
+| `HN_get_show_stories` | Fetch Show HN story IDs (configurable limit, default 10) |
+| `HN_get_job_stories` | Fetch job posting IDs (configurable limit, default 10) |
 | `HN_find_item_details` | Retrieve full details of any HackerNews item by ID |
-| `HN_lastest_item` | Get the most recently submitted item on HackerNews |
+| `HN_get_stories_with_details` | Fetch full details for a list of item IDs concurrently |
 
 ---
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.12+
 - [`uv`](https://docs.astral.sh/uv/) for dependency management
 
 ---
@@ -58,7 +64,7 @@ Add the following to your `claude_desktop_config.json`:
       "command": "uv",
       "args": [
         "--directory",
-        "/absolute/path/to/src",
+        "/absolute/path/to/domain_mcp",
         "run",
         "server.py"
       ]
@@ -77,24 +83,40 @@ Restart Claude Desktop — the HackerNews tools will appear automatically.
 
 ## Tools Reference
 
-### `HN_get_top10_stories`
+### `HN_latest_item`
 
-Returns the top 10 story IDs and their details from the HackerNews front page.
+Returns the ID of the most recently submitted item on HackerNews.
 
 **No input required.**
 
 **Example response:**
 ```json
-[
-  12345, 12346, ...
-]
+43821456
+```
+
+---
+
+### `HN_get_top_stories` / `HN_get_new_stories` / `HN_get_best_stories`
+### `HN_get_ask_stories` / `HN_get_show_stories` / `HN_get_job_stories`
+
+Returns a list of item IDs from the respective HackerNews category.
+
+**Input:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `limit` | `integer` | ❌ | `10` | Number of item IDs to return (max 500 for stories, 200 for ask/show/job) |
+
+**Example response:**
+```json
+[43821456, 43821123, 43820987]
 ```
 
 ---
 
 ### `HN_find_item_details`
 
-Fetches the full details of a HackerNews item (story, comment, job, poll, etc.) by its ID.
+Fetches full details of a HackerNews item (story, comment, job, poll, etc.) by its ID. Returns `null` for deleted or non-existent items.
 
 **Input:**
 
@@ -105,7 +127,7 @@ Fetches the full details of a HackerNews item (story, comment, job, poll, etc.) 
 **Example response:**
 ```json
 {
-  "id": 12345,
+  "id": 43821456,
   "type": "story",
   "title": "An interesting article",
   "by": "author",
@@ -118,15 +140,22 @@ Fetches the full details of a HackerNews item (story, comment, job, poll, etc.) 
 
 ---
 
-### `HN_lastest_item`
+### `HN_get_stories_with_details`
 
-Returns the most recently submitted item on HackerNews. Useful for monitoring live activity.
+Fetches full details for multiple item IDs **concurrently** — significantly faster than calling `HN_find_item_details` one at a time. Returns `null` for deleted or non-existent items.
 
-**No input required.**
+**Input:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `item_ids` | `List[integer]` | ✅ | List of HackerNews item IDs |
 
 **Example response:**
 ```json
-99999
+[
+  {"id": 43821456, "type": "story", "title": "...", "url": "...", "score": 256},
+  {"id": 43821123, "type": "story", "title": "...", "url": "...", "score": 134}
+]
 ```
 
 ---
@@ -134,9 +163,9 @@ Returns the most recently submitted item on HackerNews. Useful for monitoring li
 ## Project Structure
 
 ```
-src/
-├── main.py            # API wrapper on hackernews APIs
-├── server.py          # MCP server entry point and tool definitions
+domain_mcp/
+├── main.py            # Async HackerNews API client with Pydantic models
+├── server.py          # MCP server — tool definitions and lifespan management
 ├── pyproject.toml     # Project metadata and dependencies (uv)
 ├── uv.lock            # Locked dependency versions
 ├── .python-version    # Pinned Python version
@@ -146,9 +175,16 @@ src/
 
 ---
 
+## Architecture
+
+- **`main.py`** — pure async API layer using `httpx.AsyncClient`. All functions accept a shared client instance. Errors are caught and raised as descriptive `RuntimeError`s.
+- **`server.py`** — FastMCP server with a lifespan context manager that opens one `httpx.AsyncClient` on startup and closes it cleanly on shutdown. Tools access the shared client via `Context`.
+
+---
+
 ## HackerNews API
 
-This server is built on top of the official public HackerNews Firebase API:
+Built on top of the official public HackerNews Firebase API:
 
 - **Base URL:** `https://hacker-news.firebaseio.com/v0/`
 - **Docs:** [github.com/HackerNews/API](https://github.com/HackerNews/API)
@@ -158,13 +194,7 @@ This server is built on top of the official public HackerNews Firebase API:
 
 ## Development
 
-Open the project in VS Code:
-
-```bash
-code .
-```
-
-Run the server in development/inspector mode using the MCP CLI:
+Run the server in inspector mode using the MCP CLI:
 
 ```bash
 uv run mcp dev server.py
